@@ -588,6 +588,27 @@ Info: May not work on live streams"</string>
     <string name="morphe_queue_manager_open_queue">Open queue</string>
     <string name="morphe_queue_manager_save_queue">Save queue to playlist</string>
 
+    <!-- layout.playlistbulkremove.playlistBulkRemovePatch -->
+    <string name="morphe_playlist_bulk_remove_title">Select videos in playlists</string>
+    <string name="morphe_playlist_bulk_remove_summary">Shows a checkbox on each video in a playlist, so several can be removed at once instead of one at a time</string>
+    <string name="morphe_playlist_bulk_remove_select_all">All</string>
+    <string name="morphe_playlist_bulk_remove_clear">Clear</string>
+    <string name="morphe_playlist_bulk_remove_remove">Remove</string>
+    <string name="morphe_playlist_bulk_remove_selected_count">%d selected</string>
+    <string name="morphe_playlist_bulk_remove_confirm_title">Remove %d videos?</string>
+    <string name="morphe_playlist_bulk_remove_confirm_title_one">Remove this video?</string>
+    <string name="morphe_playlist_bulk_remove_confirm_message">These will be removed from the playlist. Check the list is what you picked:\n\n%s</string>
+    <string name="morphe_playlist_bulk_remove_confirm_more">\n and %d more</string>
+    <string name="morphe_playlist_bulk_remove_confirm_button">Remove</string>
+    <string name="morphe_playlist_bulk_remove_loading">Loading playlist\u2026</string>
+    <string name="morphe_playlist_bulk_remove_load_failed">Nothing to select here. This playlist is either empty, or not one you can edit</string>
+    <string name="morphe_playlist_bulk_remove_not_logged_in">Sign in to edit playlists</string>
+    <string name="morphe_playlist_bulk_remove_removing">Removing\u2026</string>
+    <string name="morphe_playlist_bulk_remove_success">Removed %d videos</string>
+    <string name="morphe_playlist_bulk_remove_success_one">Removed 1 video</string>
+    <string name="morphe_playlist_bulk_remove_partial">Removed %1$d videos, %2$d failed</string>
+    <string name="morphe_playlist_bulk_remove_failed">Could not remove the selected videos</string>
+
     <!-- interaction.livering.openChannelOfLiveAvatarPatch -->
     <string name="morphe_open_channel_of_live_avatar_title">Open channel from live avatar</string>
     <string name="morphe_open_channel_of_live_avatar_summary">Prevents the live stream from opening when tapping the channel\'s avatar</string>

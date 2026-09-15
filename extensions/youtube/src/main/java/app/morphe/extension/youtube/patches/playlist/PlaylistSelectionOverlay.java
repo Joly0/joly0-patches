@@ -1,0 +1,340 @@
+/*
+ * Copyright 2026 Morphe.
+ * https://github.com/MorpheApp/morphe-patches
+ *
+ * See the included NOTICE file for GPLv3 Section 7 terms that apply to Morphe contributions.
+ */
+
+package app.morphe.extension.youtube.patches.playlist;
+
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+import android.support.v7.widget.RecyclerView;
+import android.util.TypedValue;
+import android.view.MotionEvent;
+import android.view.View;
+
+import androidx.annotation.Nullable;
+
+import java.util.List;
+
+import app.morphe.extension.shared.Logger;
+import app.morphe.extension.shared.Utils;
+import app.morphe.extension.youtube.patches.utils.requests.PlaylistItem;
+
+import static app.morphe.extension.shared.StringRef.str;
+
+/**
+ * Draws a checkbox over each visible playlist row and takes the taps on them.
+ * <p>
+ * It has to draw rather than add views: the rows are LithoViews, and Litho throws
+ * {@code UnsupportedOperationException: Adding Views manually within LithoViews is not supported}
+ * when anything is added to one. Drawing over them from a sibling view is untouched by that.
+ * <p>
+ * The overlay only consumes a touch that lands on a checkbox. Everything else is declined so it
+ * reaches the list underneath and scrolling, tapping a video and so on all behave normally.
+ */
+@SuppressLint("ViewConstructor")
+final class PlaylistSelectionOverlay extends View {
+
+    private static final int CHECKBOX_DP = 18;
+    private static final int MARGIN_DP = 9;
+    /** Touch target padding around the drawn box, so a small box is still comfortable to hit. */
+    private static final int TOUCH_SLOP_DP = 12;
+
+    private final RecyclerView recyclerView;
+    private final PlaylistRowTracker tracker;
+    private final PlaylistSelectionState state;
+    private final Runnable onSelectionChanged;
+    /** Called when a visible row cannot be identified from what has been fetched. */
+    private final Runnable onNeedMoreItems;
+
+    private final Paint boxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint tickPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path tickPath = new Path();
+    private final RectF boxRect = new RectF();
+    private final RectF hitRect = new RectF();
+    private final int[] recyclerLocation = new int[2];
+    private final int[] overlayLocation = new int[2];
+    private final int[] offset = new int[2];
+    private final int[] obstructionLocation = new int[2];
+
+    /** YouTube's bottom navigation bar, and our own action bar. Both are drawn over the list. */
+    @Nullable
+    View bottomNavBar;
+    @Nullable
+    View actionBar;
+
+    private final float checkboxSize;
+    private final float margin;
+    private final float touchSlop;
+    private final int gutterPx;
+
+    /** Entry being pressed, so a tap only counts if it goes down and up on the same checkbox. */
+    @Nullable
+    private PlaylistItem pressedItem;
+
+    PlaylistSelectionOverlay(Context context, RecyclerView recyclerView, PlaylistRowTracker tracker,
+                             PlaylistSelectionState state, Runnable onSelectionChanged,
+                             Runnable onNeedMoreItems) {
+        super(context);
+        this.recyclerView = recyclerView;
+        this.tracker = tracker;
+        this.state = state;
+        this.onSelectionChanged = onSelectionChanged;
+        this.onNeedMoreItems = onNeedMoreItems;
+
+        checkboxSize = dp(CHECKBOX_DP);
+        margin = dp(MARGIN_DP);
+        touchSlop = dp(TOUCH_SLOP_DP);
+        gutterPx = (int) dp(PlaylistRowTracker.GUTTER_DP);
+
+        boxPaint.setStyle(Paint.Style.STROKE);
+        boxPaint.setStrokeWidth(dp(1.6f));
+        boxPaint.setColor(Color.WHITE);
+
+        fillPaint.setStyle(Paint.Style.FILL);
+        fillPaint.setColor(Color.WHITE);
+
+        tickPaint.setStyle(Paint.Style.STROKE);
+        tickPaint.setStrokeWidth(dp(2f));
+        tickPaint.setColor(Color.BLACK);
+        tickPaint.setStrokeCap(Paint.Cap.ROUND);
+
+    }
+
+    private float dp(float value) {
+        return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value,
+                getResources().getDisplayMetrics());
+    }
+
+    /**
+     * The overlay lives in the activity's content frame rather than beside the list, because the
+     * list's parent is a SwipeRefreshLayout, which lays out only its single scrolling child and
+     * leaves anything else at zero size. So row coordinates, which are relative to the
+     * RecyclerView, have to be shifted into this view's space.
+     */
+    private void computeOffset(int[] out) {
+        recyclerView.getLocationInWindow(recyclerLocation);
+        getLocationInWindow(overlayLocation);
+        out[0] = recyclerLocation[0] - overlayLocation[0];
+        out[1] = recyclerLocation[1] - overlayLocation[1];
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        try {
+            List<PlaylistRowTracker.TrackedRow> rows = tracker.update(recyclerView, state.items());
+            if (rows.isEmpty()) {
+                return;
+            }
+
+            computeOffset(offset);
+
+            canvas.save();
+            // Confine drawing to the part of the list that is actually visible: not over the
+            // header, and not over the bottom navigation bar or our own action bar.
+            canvas.clipRect(offset[0], offset[1],
+                    offset[0] + recyclerView.getWidth(), contentBottom());
+            canvas.translate(offset[0], offset[1]);
+
+            final boolean anchored = tracker.isAnchored();
+            boolean sawUnknownRow = false;
+            for (PlaylistRowTracker.TrackedRow row : rows) {
+                if (row.item() == null) {
+                    sawUnknownRow = true;
+                }
+                // An index the playlist does not have, or a lost anchor, means the mapping is
+                // not trustworthy. Draw the box faded and refuse the tap rather than pretend.
+                // item == null means the row's title matched nothing in the fetched playlist.
+                final boolean usable = anchored && state.isSelectable(row.item());
+                PlaylistRowTracker.setGutter(row.view(), gutterPx);
+                drawCheckbox(canvas, row, usable);
+            }
+            canvas.restore();
+
+            // Scrolled past what has been fetched. Ask for the rest rather than leaving these
+            // rows permanently dead, which is how this looked on a long playlist.
+            if (sawUnknownRow && !state.isComplete()) {
+                onNeedMoreItems.run();
+            }
+        } catch (Exception ex) {
+            Logger.printException(() -> "Playlist overlay draw failure", ex);
+        }
+    }
+
+    /**
+     * Fills the rect for a row's checkbox. Shared by drawing and hit testing so the two can never
+     * disagree about where the box is.
+     * <p>
+     * The box goes in the row's top left corner, over the corner of the thumbnail. Centring it
+     * vertically put it in the middle of the thumbnail, covering the picture. The rows cannot be
+     * shifted aside to make room because Litho draws them, so overlapping a corner is the least
+     * destructive place available.
+     */
+    private void fillBoxRect(View row, RectF out) {
+        // Both coordinates come from the tracker, which folds in any drag or swipe translation so
+        // the checkbox travels with its row instead of staying in the row's old slot.
+        final float centerY = PlaylistRowTracker.rowTop(row) + row.getHeight() / 2f;
+        final float left = PlaylistRowTracker.rowLeft(row) + margin;
+        out.set(left, centerY - checkboxSize / 2f,
+                left + checkboxSize, centerY + checkboxSize / 2f);
+    }
+
+    /**
+     * Lowest y, in this view's coordinates, that the overlay may use. The list extends behind
+     * YouTube's bottom navigation bar and behind our own action bar, and drawing or taking
+     * touches down there put a checkbox on top of the Home button.
+     */
+    private float contentBottom() {
+        float bottom = offset[1] + recyclerView.getHeight();
+        for (View obstruction : new View[]{bottomNavBar, actionBar}) {
+            if (obstruction != null && obstruction.getVisibility() == VISIBLE) {
+                obstruction.getLocationInWindow(obstructionLocation);
+                getLocationInWindow(overlayLocation);
+                bottom = Math.min(bottom, obstructionLocation[1] - overlayLocation[1]);
+            }
+        }
+        return bottom;
+    }
+
+    private void drawCheckbox(Canvas canvas, PlaylistRowTracker.TrackedRow row, boolean usable) {
+        View view = row.view();
+        fillBoxRect(view, boxRect);
+
+        // The box sits in a gutter over the page background, whose colour depends on the app's
+        // theme. Borrowing the row's own title colour tracks that without detecting the theme.
+        final int color = PlaylistRowTracker.titleColorOf(view, Color.GRAY);
+        boxPaint.setColor(color);
+        fillPaint.setColor(color);
+        tickPaint.setColor(contrastingWith(color));
+
+        final int alpha = usable ? 255 : 80;
+        boxPaint.setAlpha(alpha);
+        fillPaint.setAlpha(alpha);
+        tickPaint.setAlpha(alpha);
+
+        final float radius = dp(3);
+        final boolean selected = usable && state.isSelected(row.item());
+
+        if (selected) {
+            canvas.drawRoundRect(boxRect, radius, radius, fillPaint);
+            final float centerY = boxRect.centerY();
+            tickPath.reset();
+            tickPath.moveTo(boxRect.left + checkboxSize * 0.24f, centerY);
+            tickPath.lineTo(boxRect.left + checkboxSize * 0.43f, centerY + checkboxSize * 0.20f);
+            tickPath.lineTo(boxRect.left + checkboxSize * 0.76f, centerY - checkboxSize * 0.22f);
+            canvas.drawPath(tickPath, tickPaint);
+        } else {
+            canvas.drawRoundRect(boxRect, radius, radius, boxPaint);
+        }
+    }
+
+    /** Black or white, whichever stands out against the given colour. */
+    private static int contrastingWith(int color) {
+        final double luminance = (0.299 * Color.red(color)
+                + 0.587 * Color.green(color)
+                + 0.114 * Color.blue(color)) / 255.0;
+        return luminance > 0.5 ? Color.BLACK : Color.WHITE;
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        try {
+            computeOffset(offset);
+            final float x = event.getX() - offset[0];
+            final float y = event.getY() - offset[1];
+
+            // Outside the usable area: let it through, so the navigation bar underneath keeps
+            // working. Without this a checkbox drawn near the bottom swallowed Home button taps.
+            if (event.getY() > contentBottom()
+                    || x < 0 || y < 0 || x > recyclerView.getWidth() || y > recyclerView.getHeight()) {
+                return false;
+            }
+
+            // A tap anywhere in the checkbox gutter belongs to the overlay, even when the row is
+            // not selectable yet. Declining it let the tap reach the row underneath, so tapping a
+            // checkbox while the playlist was still loading opened and played the video.
+            if (!isInGutter(x)) {
+                return false;
+            }
+
+            final PlaylistItem hit = itemAtPoint(x, y);
+
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    pressedItem = hit;
+                    // Consumed either way: a gutter tap must never fall through to the row.
+                    return true;
+
+                case MotionEvent.ACTION_MOVE:
+                    return true;
+
+                case MotionEvent.ACTION_UP:
+                    if (pressedItem != null && hit != null
+                            && pressedItem.setVideoId().equals(hit.setVideoId())) {
+                        toggle(hit);
+                    } else if (hit == null && state.isLoading()) {
+                        Utils.showToastShort(str("morphe_playlist_bulk_remove_loading"));
+                    }
+                    pressedItem = null;
+                    return true;
+
+                case MotionEvent.ACTION_CANCEL:
+                    pressedItem = null;
+                    return true;
+
+                default:
+                    return true;
+            }
+        } catch (Exception ex) {
+            Logger.printException(() -> "Playlist overlay touch failure", ex);
+            pressedItem = null;
+            return false;
+        }
+    }
+
+    private void toggle(@Nullable PlaylistItem item) {
+        state.toggle(item);
+        invalidate();
+        onSelectionChanged.run();
+    }
+
+    /**
+     * Whether an x coordinate falls in the checkbox gutter, regardless of any row's state.
+     * Measured from the list's own left edge rather than a row's, because a row being swiped
+     * sideways must not drag the whole touch region with it.
+     */
+    private boolean isInGutter(float x) {
+        return x >= 0 && x <= margin + checkboxSize + touchSlop;
+    }
+
+    /**
+     * @return the entry whose checkbox contains the point, or null.
+     */
+    @Nullable
+    private PlaylistItem itemAtPoint(float x, float y) {
+        if (!tracker.isAnchored()) {
+            return null;
+        }
+
+        for (PlaylistRowTracker.TrackedRow row : tracker.update(recyclerView, state.items())) {
+            if (!state.isSelectable(row.item())) {
+                continue;
+            }
+            fillBoxRect(row.view(), hitRect);
+            if (x >= hitRect.left - touchSlop && x <= hitRect.right + touchSlop
+                    && y >= hitRect.top - touchSlop && y <= hitRect.bottom + touchSlop) {
+                return row.item();
+            }
+        }
+        return null;
+    }
+}

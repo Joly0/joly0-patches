@@ -16,6 +16,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -26,6 +27,12 @@ import app.morphe.extension.shared.requests.Route;
 public final class PlaylistRoutes {
 
     private static final String YT_API_URL = "https://youtubei.googleapis.com/youtubei/v1/";
+
+    /**
+     * How many edit actions to send in one request. The endpoint accepts an array of actions,
+     * but very large edits are rejected, so bulk removals are chunked at this size.
+     */
+    public static final int MAX_ACTIONS_PER_REQUEST = 50;
 
     private static final int CLIENT_ID = 3;
     private static final String CLIENT_NAME = "ANDROID";
@@ -138,6 +145,53 @@ public final class PlaylistRoutes {
             return body.toString().getBytes(StandardCharsets.UTF_8);
         } catch (JSONException ex) {
             Logger.printException(() -> "editPlaylistBody failed", ex);
+        }
+        return new byte[0];
+    }
+
+    /**
+     * Body for removing many videos from a playlist in a single request.
+     * <p>
+     * The edit endpoint takes an array of actions, so removals can be batched instead of
+     * being sent one video at a time. Callers should chunk with {@link #MAX_ACTIONS_PER_REQUEST}
+     * rather than sending an unbounded list, since the server rejects very large edits.
+     *
+     * @param setVideoIds The per playlist entry ids, not video ids. A video can appear in a
+     *                    playlist more than once, and the setVideoId is what identifies which
+     *                    occurrence to remove.
+     */
+    public static byte[] removeVideosBody(String playlistId, List<String> setVideoIds) {
+        try {
+            JSONObject body = getBaseContentJson();
+            body.put("playlistId", playlistId);
+
+            JSONArray actions = new JSONArray();
+            for (String setVideoId : setVideoIds) {
+                JSONObject action = new JSONObject();
+                action.put("action", "ACTION_REMOVE_VIDEO");
+                action.put("setVideoId", setVideoId);
+                actions.put(action);
+            }
+            body.put("actions", actions);
+            return body.toString().getBytes(StandardCharsets.UTF_8);
+        } catch (JSONException ex) {
+            Logger.printException(() -> "removeVideosBody failed", ex);
+        }
+        return new byte[0];
+    }
+
+    /**
+     * Body for fetching the next page of a browse response.
+     * Used to walk a playlist that is longer than a single page.
+     */
+    public static byte[] browseContinuationBody(String continuation) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("context", androidContext());
+            body.put("continuation", continuation);
+            return body.toString().getBytes(StandardCharsets.UTF_8);
+        } catch (JSONException ex) {
+            Logger.printException(() -> "browseContinuationBody failed", ex);
         }
         return new byte[0];
     }
