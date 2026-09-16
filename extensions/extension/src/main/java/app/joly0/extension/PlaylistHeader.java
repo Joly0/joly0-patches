@@ -1,7 +1,5 @@
 package app.joly0.extension;
 
-import android.util.Log;
-
 /**
  * Supplies the id of the playlist currently on screen.
  * <p>
@@ -15,8 +13,6 @@ import android.util.Log;
  * rows rather than Litho components, so that check needs views, which a component hook never sees.
  */
 public final class PlaylistHeader {
-
-    private static final String LOG_TAG = "Joly0Patches";
 
     private static final String HEADER_IDENTIFIER = "page_header";
 
@@ -53,10 +49,10 @@ public final class PlaylistHeader {
             String playlistId = extractPlaylistId(findAsciiStrings(bytes));
             if (playlistId != null && !playlistId.equals(currentPlaylistId)) {
                 currentPlaylistId = playlistId;
-                Log.i(LOG_TAG, "playlist page header: " + playlistId);
+                Logger.printInfo(() -> "playlist page header: " + playlistId);
             }
         } catch (Exception ex) {
-            Log.e(LOG_TAG, "onComponent failed", ex);
+            Logger.printException(() -> "onComponent failed", ex);
         }
     }
 

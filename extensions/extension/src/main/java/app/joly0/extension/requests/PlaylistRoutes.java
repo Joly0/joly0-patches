@@ -1,0 +1,161 @@
+/* Adapted from morphe-patches (GPLv3), app.morphe.extension.youtube.patches.utils.requests. */
+
+package app.joly0.extension.requests;
+
+import android.os.Build;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+import app.joly0.extension.Logger;
+
+public final class PlaylistRoutes {
+
+    private static final String YT_API_URL = "https://youtubei.googleapis.com/youtubei/v1/";
+
+    /**
+     * How many edit actions to send in one request. The endpoint accepts an array of actions,
+     * but very large edits are rejected, so bulk removals are chunked at this size.
+     */
+    public static final int MAX_ACTIONS_PER_REQUEST = 50;
+
+    private static final int CLIENT_ID = 3;
+    private static final String CLIENT_NAME = "ANDROID";
+    private static final String CLIENT_VERSION = "20.26.46";
+    private static final String PACKAGE_NAME = "com.google.android.youtube";
+
+    private static final int CONNECTION_TIMEOUT_MILLISECONDS = 10 * 1000;
+
+    public static final Route.CompiledRoute EDIT_PLAYLIST = new Route(
+            Route.Method.POST, "browse/edit_playlist?fields=status,playlistEditResults"
+    ).compile();
+
+    public static final Route.CompiledRoute BROWSE_PLAYLIST = new Route(
+            Route.Method.POST, "browse?prettyPrint=false"
+    ).compile();
+
+    private PlaylistRoutes() {
+    }
+
+    private static JSONObject androidContext() throws JSONException {
+        JSONObject client = new JSONObject();
+        client.put("clientName", CLIENT_NAME);
+        client.put("clientVersion", CLIENT_VERSION);
+        client.put("deviceMake", Build.MANUFACTURER);
+        client.put("deviceModel", Build.MODEL);
+        client.put("osName", "Android");
+        client.put("osVersion", Build.VERSION.RELEASE);
+        client.put("androidSdkVersion", Build.VERSION.SDK_INT);
+        Locale localeDefault = Locale.getDefault();
+        client.put("hl", localeDefault.getLanguage());
+        client.put("gl", localeDefault.getCountry());
+
+        JSONObject context = new JSONObject();
+        context.put("client", client);
+        return context;
+    }
+
+    private static JSONObject getBaseContentJson() throws JSONException {
+        JSONObject body = new JSONObject();
+        body.put("context", androidContext());
+        body.put("contentCheckOk", true);
+        body.put("racyCheckOk", true);
+        return body;
+    }
+
+    /**
+     * Body for removing many videos from a playlist in a single request.
+     * <p>
+     * The edit endpoint takes an array of actions, so removals can be batched instead of
+     * being sent one video at a time. Callers should chunk with {@link #MAX_ACTIONS_PER_REQUEST}
+     * rather than sending an unbounded list, since the server rejects very large edits.
+     *
+     * @param setVideoIds The per playlist entry ids, not video ids. A video can appear in a
+     *                    playlist more than once, and the setVideoId is what identifies which
+     *                    occurrence to remove.
+     */
+    public static byte[] removeVideosBody(String playlistId, List<String> setVideoIds) {
+        try {
+            JSONObject body = getBaseContentJson();
+            body.put("playlistId", playlistId);
+
+            JSONArray actions = new JSONArray();
+            for (String setVideoId : setVideoIds) {
+                JSONObject action = new JSONObject();
+                action.put("action", "ACTION_REMOVE_VIDEO");
+                action.put("setVideoId", setVideoId);
+                actions.put(action);
+            }
+            body.put("actions", actions);
+            return body.toString().getBytes(StandardCharsets.UTF_8);
+        } catch (JSONException ex) {
+            Logger.printException(() -> "removeVideosBody failed", ex);
+        }
+        return new byte[0];
+    }
+
+    /**
+     * Body for fetching the next page of a browse response.
+     * Used to walk a playlist that is longer than a single page.
+     */
+    public static byte[] browseContinuationBody(String continuation) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("context", androidContext());
+            body.put("continuation", continuation);
+            return body.toString().getBytes(StandardCharsets.UTF_8);
+        } catch (JSONException ex) {
+            Logger.printException(() -> "browseContinuationBody failed", ex);
+        }
+        return new byte[0];
+    }
+
+    public static byte[] browsePlaylistBody(String playlistId) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("context", androidContext());
+            body.put("browseId", "VL" + playlistId);
+            return body.toString().getBytes(StandardCharsets.UTF_8);
+        } catch (JSONException ex) {
+            Logger.printException(() -> "browsePlaylistBody failed", ex);
+        }
+        return new byte[0];
+    }
+
+    public static HttpURLConnection getConnection(Route.CompiledRoute route, Map<String, String> authHeaders) throws IOException {
+        String userAgent = String.format(Locale.US,
+                "%s/%s (Linux; U; Android %s; %s; %s Build/%s)",
+                PACKAGE_NAME, CLIENT_VERSION, Build.VERSION.RELEASE,
+                Locale.getDefault(), Build.MODEL, Build.ID);
+
+        HttpURLConnection connection = Requester.getConnectionFromCompiledRoute(YT_API_URL, route);
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setRequestProperty("User-Agent", userAgent);
+        connection.setRequestProperty("X-YouTube-Client-Name", String.valueOf(CLIENT_ID));
+        connection.setRequestProperty("X-YouTube-Client-Version", CLIENT_VERSION);
+        connection.setRequestProperty("X-GOOG-API-FORMAT-VERSION", "2");
+        connection.setUseCaches(false);
+        connection.setDoOutput(true);
+        connection.setConnectTimeout(CONNECTION_TIMEOUT_MILLISECONDS);
+        connection.setReadTimeout(CONNECTION_TIMEOUT_MILLISECONDS);
+
+        if (authHeaders != null) {
+            for (Map.Entry<String, String> entry : authHeaders.entrySet()) {
+                String value = entry.getValue();
+                if (value != null && !value.isEmpty()) {
+                    connection.setRequestProperty(entry.getKey(), value);
+                }
+            }
+        }
+
+        return connection;
+    }
+}

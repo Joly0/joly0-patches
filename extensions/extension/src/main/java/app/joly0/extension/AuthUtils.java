@@ -1,7 +1,5 @@
 package app.joly0.extension;
 
-import android.util.Log;
-
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -16,6 +14,7 @@ public final class AuthUtils {
 
     private static final String AUTHORIZATION = "Authorization";
     private static final String VISITOR_ID = "X-Goog-Visitor-Id";
+    private static final String PAGE_ID = "X-Goog-PageId";
 
     private static volatile Map<String, String> headers = Collections.emptyMap();
 
@@ -39,9 +38,14 @@ public final class AuthUtils {
             if (visitorId != null) {
                 captured.put(VISITOR_ID, visitorId);
             }
+            // Selects the brand account. Without it a request acts on the primary account.
+            String pageId = requestHeaders.get(PAGE_ID);
+            if (pageId != null) {
+                captured.put(PAGE_ID, pageId);
+            }
             headers = Collections.unmodifiableMap(captured);
         } catch (Exception ex) {
-            Log.e("Joly0Patches", "setRequestHeaders failed", ex);
+            Logger.printException(() -> "setRequestHeaders failed", ex);
         }
     }
 

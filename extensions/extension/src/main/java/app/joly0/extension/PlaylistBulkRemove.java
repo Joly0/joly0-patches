@@ -1,8 +1,12 @@
 package app.joly0.extension;
 
-import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+
+import java.util.List;
+
+import app.joly0.extension.requests.GetPlaylistItemsRequest;
+import app.joly0.extension.requests.PlaylistItem;
 
 /**
  * Entry point for playlist bulk removal.
@@ -35,16 +39,52 @@ public final class PlaylistBulkRemove {
                         return;
                     }
                     reportedPlaylistId = playlistId;
-                    Log.i("Joly0Patches", "editable playlist detected, id=" + playlistId
-                            + ", rows=" + list.getChildCount()
-                            + ", authenticated=" + !AuthUtils.isNotLoggedIn());
+                    final int rowCount = list.getChildCount();
+                    final boolean authenticated = !AuthUtils.isNotLoggedIn();
+                    Logger.printInfo(() -> "editable playlist detected, id=" + playlistId
+                            + ", rows=" + rowCount
+                            + ", authenticated=" + authenticated);
+                    probeFirstPage(playlistId);
                 } catch (Exception ex) {
-                    Log.e("Joly0Patches", "draw listener failed", ex);
+                    Logger.printException(() -> "draw listener failed", ex);
                 }
             });
         } catch (Exception ex) {
-            Log.e("Joly0Patches", "onRecyclerViewCreated failed", ex);
+            Logger.printException(() -> "onRecyclerViewCreated failed", ex);
         }
+    }
+
+    /**
+     * Temporary. Reads the first page of the playlist and logs what came back.
+     *
+     * The request plumbing has no caller yet, so without this nothing exercises it and a clean
+     * build would prove only that it compiles. The selection UI replaces this.
+     */
+    private static void probeFirstPage(String playlistId) {
+        if (AuthUtils.isNotLoggedIn()) {
+            Logger.printInfo(() -> "probe skipped, no auth headers captured yet");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                // Stop after the first page: the point is to prove the request works, not to
+                // pull a four thousand entry playlist.
+                List<PlaylistItem> items = GetPlaylistItemsRequest.fetchAll(
+                        playlistId, AuthUtils.getRequestHeaders(), (itemsSoFar, complete) -> false);
+
+                if (items.isEmpty()) {
+                    Logger.printInfo(() -> "probe got no entries for " + playlistId);
+                    return;
+                }
+                PlaylistItem first = items.get(0);
+                Logger.printInfo(() -> "probe read " + items.size() + " entries, first: "
+                        + first.title() + " by " + first.author()
+                        + ", setVideoId present=" + !first.setVideoId().isEmpty());
+            } catch (Exception ex) {
+                Logger.printException(() -> "probe failed", ex);
+            }
+        }, "Joly0PlaylistProbe").start();
     }
 
     private static boolean hasEditableRows(ViewGroup list) {

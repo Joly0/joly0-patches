@@ -1,3 +1,4 @@
 build/
 .gradle/
 patches-list.json
+.spec-workflow/
