@@ -2,12 +2,12 @@ group = "app.morphe"
 
 patches {
     about {
-        name = "Morphe Patches"
-        description = "Patches for Morphe"
-        source = "git@github.com:MorpheApp/morphe-patches.git"
-        author = "MorpheApp"
+        name = "Joly0 Patches"
+        description = "Personal patch bundle, derived from morphe-patches"
+        source = "git@github.com:Joly0/joly0-patches.git"
+        author = "Joly0"
         contact = "na"
-        website = "https://morphe.software"
+        website = "https://github.com/Joly0/joly0-patches"
         license = "GNU General Public License v3.0, with additional GPL section 7 requirements"
     }
 }
