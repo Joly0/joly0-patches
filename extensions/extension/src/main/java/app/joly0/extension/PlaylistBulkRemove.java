@@ -1,104 +1,56 @@
 package app.joly0.extension;
 
-import android.view.View;
 import android.view.ViewGroup;
 
-import java.util.List;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
 
-import app.joly0.extension.requests.GetPlaylistItemsRequest;
-import app.joly0.extension.requests.PlaylistItem;
+import app.joly0.extension.playlist.PlaylistSelectionController;
 
 /**
- * Entry point for playlist bulk removal.
+ * Lets several videos be removed from a playlist at once, instead of swiping and confirming one
+ * at a time.
  * <p>
- * Only a playlist you can edit renders native {@code playlist_video_item} rows; a read-only
- * playlist such as a channel's uploads is drawn by Litho and carries no such views. So looking
- * for that row both identifies the screen and confirms the playlist is editable at all.
+ * A checkbox is drawn over each playlist row and a bar along the bottom removes everything
+ * picked in a single request. The checkboxes are drawn rather than added as views because the
+ * rows are LithoViews, which refuse added children outright.
  */
 public final class PlaylistBulkRemove {
 
-    private static final String ROW_RESOURCE_NAME = "playlist_video_item";
-
-    /** Playlist the detection was last logged for, so switching playlists logs again. */
-    private static String reportedPlaylistId;
+    /**
+     * Lists already given a controller.
+     * <p>
+     * The hooked Litho binder constructor runs more than once for the same RecyclerView, so
+     * without this each list collected several controllers: several overlays stacked in the
+     * content frame, several action bars, and the playlist fetched once per controller. Weakly
+     * held so a list going away takes its entry with it.
+     */
+    private static final Set<ViewGroup> attached =
+            Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
 
     private PlaylistBulkRemove() {
     }
 
-    /** Injection point. Called for every Litho-backed RecyclerView the app creates. */
+    /**
+     * Injection point. Called for every Litho-backed RecyclerView the app creates, most of which
+     * are not playlists. The controller stays dormant until the page header says otherwise.
+     * <p>
+     * The feature is always on: this bundle has no preference screen yet.
+     */
     public static void onRecyclerViewCreated(Object recyclerView) {
         try {
             if (!(recyclerView instanceof ViewGroup list)) {
                 return;
             }
-            list.getViewTreeObserver().addOnDrawListener(() -> {
-                try {
-                    String playlistId = PlaylistHeader.getCurrentPlaylistId();
-                    if (playlistId == null || playlistId.equals(reportedPlaylistId)
-                            || !hasEditableRows(list)) {
-                        return;
-                    }
-                    reportedPlaylistId = playlistId;
-                    final int rowCount = list.getChildCount();
-                    final boolean authenticated = !AuthUtils.isNotLoggedIn();
-                    Logger.printInfo(() -> "editable playlist detected, id=" + playlistId
-                            + ", rows=" + rowCount
-                            + ", authenticated=" + authenticated);
-                    probeFirstPage(playlistId);
-                } catch (Exception ex) {
-                    Logger.printException(() -> "draw listener failed", ex);
-                }
-            });
+            if (!attached.add(list)) {
+                return;
+            }
+            // Toasts need a context, and the views this feature adds do not always carry one.
+            Utils.setContext(list.getContext().getApplicationContext());
+            new PlaylistSelectionController(list).attach();
         } catch (Exception ex) {
             Logger.printException(() -> "onRecyclerViewCreated failed", ex);
         }
-    }
-
-    /**
-     * Temporary. Reads the first page of the playlist and logs what came back.
-     *
-     * The request plumbing has no caller yet, so without this nothing exercises it and a clean
-     * build would prove only that it compiles. The selection UI replaces this.
-     */
-    private static void probeFirstPage(String playlistId) {
-        if (AuthUtils.isNotLoggedIn()) {
-            Logger.printInfo(() -> "probe skipped, no auth headers captured yet");
-            return;
-        }
-
-        new Thread(() -> {
-            try {
-                // Stop after the first page: the point is to prove the request works, not to
-                // pull a four thousand entry playlist.
-                List<PlaylistItem> items = GetPlaylistItemsRequest.fetchAll(
-                        playlistId, AuthUtils.getRequestHeaders(), (itemsSoFar, complete) -> false);
-
-                if (items.isEmpty()) {
-                    Logger.printInfo(() -> "probe got no entries for " + playlistId);
-                    return;
-                }
-                PlaylistItem first = items.get(0);
-                Logger.printInfo(() -> "probe read " + items.size() + " entries, first: "
-                        + first.title() + " by " + first.author()
-                        + ", setVideoId present=" + !first.setVideoId().isEmpty());
-            } catch (Exception ex) {
-                Logger.printException(() -> "probe failed", ex);
-            }
-        }, "Joly0PlaylistProbe").start();
-    }
-
-    private static boolean hasEditableRows(ViewGroup list) {
-        final int rowId = list.getResources().getIdentifier(
-                ROW_RESOURCE_NAME, "id", list.getContext().getPackageName());
-        if (rowId == 0) {
-            return false;
-        }
-        for (int i = 0, count = list.getChildCount(); i < count; i++) {
-            View child = list.getChildAt(i);
-            if (child.findViewById(rowId) != null) {
-                return true;
-            }
-        }
-        return false;
     }
 }
