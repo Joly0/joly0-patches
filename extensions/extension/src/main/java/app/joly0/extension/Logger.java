@@ -16,11 +16,25 @@ public final class Logger {
 
     private static final String TAG = "Joly0Patches";
 
+    /**
+     * Whether {@link #printDebug} does anything.
+     * <p>
+     * Off in a released bundle: the debug lines report every playlist fetch with counts and
+     * timings, which is what you want while working on the feature and noise on somebody's
+     * device. The fork gates this on a user-facing setting; this bundle has no settings screen,
+     * so flip the constant and rebuild.
+     * <p>
+     * The message is a {@link Supplier} so that nothing is concatenated while this is off.
+     */
+    private static final boolean DEBUG = false;
+
     private Logger() {
     }
 
     public static void printDebug(Supplier<String> message) {
-        Log.d(TAG, message.get());
+        if (DEBUG) {
+            Log.d(TAG, message.get());
+        }
     }
 
     public static void printInfo(Supplier<String> message) {
