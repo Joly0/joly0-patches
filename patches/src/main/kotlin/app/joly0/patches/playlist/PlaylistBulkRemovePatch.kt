@@ -1,6 +1,7 @@
 package app.joly0.patches.playlist
 
 import app.joly0.patches.auth.authHookPatch
+import app.joly0.patches.litho.lithoComponentHookPatch
 import app.joly0.patches.recyclerview.addRecyclerViewTreeHook
 import app.joly0.patches.recyclerview.recyclerViewTreeHookPatch
 import app.joly0.patches.shared.Constants.COMPATIBILITY_YOUTUBE
@@ -20,7 +21,7 @@ val playlistBulkRemovePatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_YOUTUBE)
 
-    dependsOn(authHookPatch, recyclerViewTreeHookPatch)
+    dependsOn(authHookPatch, recyclerViewTreeHookPatch, lithoComponentHookPatch)
 
     extendWith("extensions/extension.mpe")
 

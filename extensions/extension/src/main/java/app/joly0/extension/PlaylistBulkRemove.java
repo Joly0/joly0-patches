@@ -15,7 +15,8 @@ public final class PlaylistBulkRemove {
 
     private static final String ROW_RESOURCE_NAME = "playlist_video_item";
 
-    private static boolean reported;
+    /** Playlist the detection was last logged for, so switching playlists logs again. */
+    private static String reportedPlaylistId;
 
     private PlaylistBulkRemove() {
     }
@@ -28,11 +29,14 @@ public final class PlaylistBulkRemove {
             }
             list.getViewTreeObserver().addOnDrawListener(() -> {
                 try {
-                    if (reported || !hasEditableRows(list)) {
+                    String playlistId = PlaylistHeader.getCurrentPlaylistId();
+                    if (playlistId == null || playlistId.equals(reportedPlaylistId)
+                            || !hasEditableRows(list)) {
                         return;
                     }
-                    reported = true;
-                    Log.i("Joly0Patches", "editable playlist detected, rows=" + list.getChildCount()
+                    reportedPlaylistId = playlistId;
+                    Log.i("Joly0Patches", "editable playlist detected, id=" + playlistId
+                            + ", rows=" + list.getChildCount()
                             + ", authenticated=" + !AuthUtils.isNotLoggedIn());
                 } catch (Exception ex) {
                     Log.e("Joly0Patches", "draw listener failed", ex);
