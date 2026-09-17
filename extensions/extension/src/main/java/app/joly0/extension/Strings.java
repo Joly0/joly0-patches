@@ -35,9 +35,13 @@ public final class Strings {
         VALUES.put("playlist_bulk_remove_confirm_button", "Remove");
         VALUES.put("playlist_bulk_remove_removing", "Removing\u2026");
         VALUES.put("playlist_bulk_remove_failed", "Could not remove the selected videos");
+        VALUES.put("playlist_bulk_remove_failed_reason",
+                "Could not remove the selected videos: %s");
         VALUES.put("playlist_bulk_remove_success_one", "Removed 1 video");
         VALUES.put("playlist_bulk_remove_success", "Removed %d videos");
         VALUES.put("playlist_bulk_remove_partial", "Removed %1$d videos, %2$d failed");
+        VALUES.put("playlist_bulk_remove_partial_reason",
+                "Removed %1$d videos, %2$d failed: %3$s");
     }
 
     private Strings() {

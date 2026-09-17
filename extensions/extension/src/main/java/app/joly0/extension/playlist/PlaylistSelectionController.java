@@ -506,7 +506,10 @@ public final class PlaylistSelectionController {
     private void onRemovalFinished(List<PlaylistItem> selected,
                                    RemovePlaylistVideosRequest.Result result) {
         if (result.isCompleteFailure()) {
-            Utils.showToastShort(str("playlist_bulk_remove_failed"));
+            // Saying why turns "it did not work" into something reportable without a logcat.
+            Utils.showToastShort(result.reason() == null
+                    ? str("playlist_bulk_remove_failed")
+                    : str("playlist_bulk_remove_failed_reason", result.reason()));
             return;
         }
 
@@ -523,10 +526,15 @@ public final class PlaylistSelectionController {
             overlay.invalidate();
         }
 
-        Utils.showToastShort(result.isCompleteSuccess()
-                ? (removed.size() == 1
-                        ? str("playlist_bulk_remove_success_one")
-                        : str("playlist_bulk_remove_success", removed.size()))
-                : str("playlist_bulk_remove_partial", removed.size(), result.failed().size()));
+        if (result.isCompleteSuccess()) {
+            Utils.showToastShort(removed.size() == 1
+                    ? str("playlist_bulk_remove_success_one")
+                    : str("playlist_bulk_remove_success", removed.size()));
+        } else {
+            Utils.showToastShort(result.reason() == null
+                    ? str("playlist_bulk_remove_partial", removed.size(), result.failed().size())
+                    : str("playlist_bulk_remove_partial_reason", removed.size(),
+                            result.failed().size(), result.reason()));
+        }
     }
 }
