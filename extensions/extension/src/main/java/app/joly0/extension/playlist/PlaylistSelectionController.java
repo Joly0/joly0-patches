@@ -4,6 +4,7 @@ package app.joly0.extension.playlist;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.graphics.Rect;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -44,6 +45,18 @@ public final class PlaylistSelectionController {
     /** Null until the selection UI is installed. */
     private PlaylistSelectionActionBar actionBar;
 
+    /**
+     * YouTube's player. Resolved lazily: it is not in the hierarchy until the first video is
+     * opened, so a null here means "no video has been played yet", not "lookup failed".
+     */
+    private View watchPlayer;
+
+    /** Reused by {@link #listIsOnScreen}, a field only to keep allocation off the draw path. */
+    private final Rect listBounds = new Rect();
+
+    /** Whether the playlist is the page the user is actually looking at. */
+    private boolean pageVisible = true;
+
     private final int[] navBarLocation = new int[2];
     private final int[] contentLocation = new int[2];
 
@@ -81,6 +94,17 @@ public final class PlaylistSelectionController {
 
     private void onDraw() {
         try {
+            // Opening a video does not detach this list, and this listener belongs to the window
+            // rather than to the list, so it keeps firing while the watch page is up. Nothing
+            // else notices: the overlay is a sibling of the whole page in the content frame, and
+            // a hidden list keeps the layout coordinates its rows last had. Without this check
+            // the checkboxes carry on being drawn, in their old places, over the player.
+            final boolean onScreen = listIsOnScreen();
+            setPageVisible(onScreen);
+            if (!onScreen) {
+                return;
+            }
+
             // An editable playlist renders real playlist_video_item rows. That is both the
             // detection and the requirement: a list without them is either not a playlist or is
             // one that cannot be edited, and either way there is nothing to offer here.
@@ -157,6 +181,64 @@ public final class PlaylistSelectionController {
     }
 
     /**
+     * Whether the list is really in front of the user, rather than still in the hierarchy behind
+     * the page that replaced it.
+     */
+    private boolean listIsOnScreen() {
+        // isShown covers the browse pane being hidden or the window going away. The bounds check
+        // covers a pane that is still nominally visible but has been collapsed to nothing.
+        return recyclerView.isShown()
+                && recyclerView.getWidth() > 0
+                && recyclerView.getHeight() > 0
+                && recyclerView.getGlobalVisibleRect(listBounds)
+                && !listBounds.isEmpty()
+                && !watchPlayerCoversList();
+    }
+
+    /**
+     * Whether the watch page is expanded over the list.
+     * <p>
+     * Belt and braces next to {@link #listIsOnScreen}'s visibility checks: whether YouTube hides
+     * the browse pane or simply draws the watch page on top of it is its own business, and it has
+     * changed before. The miniplayer is deliberately not counted, since the list stays usable
+     * underneath it and the checkboxes should stay with it.
+     */
+    private boolean watchPlayerCoversList() {
+        if (watchPlayer == null) {
+            watchPlayer = Utils.getChildViewByResourceName(recyclerView.getRootView(),
+                    "watch_player");
+        }
+        if (watchPlayer == null || !watchPlayer.isShown()) {
+            return false;
+        }
+        // The miniplayer is a small box in a corner; the watch page proper, in either
+        // orientation, spans the full width.
+        return watchPlayer.getWidth() >= recyclerView.getWidth() * 0.9f;
+    }
+
+    /**
+     * Shows or hides everything this feature draws, following the playlist page on and off
+     * screen. Hidden rather than removed so that a selection survives watching a video and is
+     * still there on the way back.
+     */
+    private void setPageVisible(boolean visible) {
+        if (pageVisible == visible) {
+            return;
+        }
+        pageVisible = visible;
+
+        // Visibility, not invalidate: the overlay is a real view, so leaving it alone leaves the
+        // checkboxes it last drew on the screen. GONE also stops it swallowing touches meant for
+        // whatever is now in front.
+        if (overlay != null) {
+            overlay.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+        if (actionBar != null) {
+            actionBar.setPageVisible(visible);
+        }
+    }
+
+    /**
      * Grows the list's bottom padding by the height of the action bar, so the last video can be
      * scrolled clear of it instead of sitting behind it.
      */
@@ -205,6 +287,8 @@ public final class PlaylistSelectionController {
         }
         overlay = null;
         actionBar = null;
+        watchPlayer = null;
+        pageVisible = true;
         installed = false;
         tracker.reset();
     }

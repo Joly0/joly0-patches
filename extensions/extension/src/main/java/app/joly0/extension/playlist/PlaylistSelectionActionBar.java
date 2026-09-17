@@ -28,6 +28,10 @@ import static app.joly0.extension.Strings.str;
 final class PlaylistSelectionActionBar extends LinearLayout {
 
     private final int basePadding;
+    /** How many rows are picked, kept because visibility depends on it and on the page. */
+    private int selectedCount;
+    /** False while the playlist page is not the page on screen. */
+    private boolean pageVisible = true;
     private int systemBottomInset;
     private int bottomOffset = -1;
     private final TextView countLabel;
@@ -154,10 +158,8 @@ final class PlaylistSelectionActionBar extends LinearLayout {
      * checkboxes are the affordance that the feature is available; this is just the actions.
      */
     void setSelectedCount(int count, boolean enabled) {
-        final int visibility = count > 0 ? VISIBLE : GONE;
-        if (getVisibility() != visibility) {
-            setVisibility(visibility);
-        }
+        selectedCount = count;
+        applyVisibility();
         if (count == 0) {
             return;
         }
@@ -165,6 +167,24 @@ final class PlaylistSelectionActionBar extends LinearLayout {
         countLabel.setText(str("playlist_bulk_remove_selected_count", count));
         removeButton.setEnabled(enabled);
         removeButton.setAlpha(enabled ? 1f : 0.4f);
+    }
+
+    /**
+     * Follows the playlist page on and off screen. Without this the bar would reappear over
+     * whatever replaced the playlist the next time the selection changed.
+     */
+    void setPageVisible(boolean visible) {
+        if (pageVisible != visible) {
+            pageVisible = visible;
+            applyVisibility();
+        }
+    }
+
+    private void applyVisibility() {
+        final int visibility = pageVisible && selectedCount > 0 ? VISIBLE : GONE;
+        if (getVisibility() != visibility) {
+            setVisibility(visibility);
+        }
     }
 
     /**
