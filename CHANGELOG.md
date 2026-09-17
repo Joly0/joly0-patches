@@ -1,3 +1,15 @@
+## [1.0.4](https://github.com/Joly0/joly0-patches/compare/v1.0.3...v1.0.4) (2026-09-18)
+
+### Bug Fixes
+
+* let a drag that starts on a checkbox scroll the playlist, instead of the gutter holding the whole gesture so that only the thumbnail and the title scrolled ([1124be0](https://github.com/Joly0/joly0-patches/commit/1124be0))
+* retry a failed removal chunk one entry at a time, so a single entry the server refuses no longer reports every other entry in that chunk as failed ([6e10bb1](https://github.com/Joly0/joly0-patches/commit/6e10bb1))
+* report why a removal failed, so an expired credential reads as HTTP 401 rather than one flat message ([6e10bb1](https://github.com/Joly0/joly0-patches/commit/6e10bb1))
+
+### Known Issues
+
+* a video removed while the page is open leaves its row on screen with a greyed out checkbox until YouTube refetches the playlist. The video is gone from the playlist; the row is stale.
+
 ## [1.0.3](https://github.com/Joly0/joly0-patches/compare/v1.0.2...v1.0.3) (2026-09-17)
 
 ### Bug Fixes
