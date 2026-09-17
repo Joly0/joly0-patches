@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/Joly0/joly0-patches/compare/v1.0.2...v1.0.3) (2026-09-17)
+
+### Bug Fixes
+
+* hide the checkboxes and the action bar while the playlist is not the page on screen, instead of drawing them over the video player and keeping them there through a rotation into landscape ([9604c16](https://github.com/Joly0/joly0-patches/commit/9604c167846d2a2faab4c32cfcf02c701ee627b0))
+* stop the overlay swallowing taps meant for whatever replaced the playlist ([9604c16](https://github.com/Joly0/joly0-patches/commit/9604c167846d2a2faab4c32cfcf02c701ee627b0))
+
 ## [1.0.2](https://github.com/Joly0/joly0-patches/compare/v1.0.1...v1.0.2) (2026-09-16)
 
 ### Bug Fixes
