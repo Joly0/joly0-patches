@@ -11,6 +11,7 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.util.TypedValue;
 import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -68,6 +69,8 @@ final class PlaylistSelectionOverlay extends View {
     private final float checkboxSize;
     private final float margin;
     private final float touchSlop;
+    /** Distance a finger must travel before a press on a checkbox becomes a scroll. */
+    private final float dragSlop;
     private final int gutterPx;
 
     /**
@@ -75,6 +78,16 @@ final class PlaylistSelectionOverlay extends View {
      * Null when nothing is pressed.
      */
     private PlaylistItem pressedItem;
+
+    /** Where the current gesture went down, in this view's coordinates. */
+    private float downX;
+    private float downY;
+
+    /**
+     * Set once a gesture has been handed to the list as a scroll. The rest of that gesture goes
+     * there too, whatever it passes over.
+     */
+    private boolean forwardingToList;
 
     PlaylistSelectionOverlay(Context context, ViewGroup recyclerView, PlaylistRowTracker tracker,
                              PlaylistSelectionState state, Runnable onSelectionChanged,
@@ -89,6 +102,9 @@ final class PlaylistSelectionOverlay extends View {
         checkboxSize = dp(CHECKBOX_DP);
         margin = dp(MARGIN_DP);
         touchSlop = dp(TOUCH_SLOP_DP);
+        // The system's own drag threshold, so letting go of a gesture happens at the same
+        // distance the list itself would have started scrolling at.
+        dragSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         gutterPx = (int) dp(PlaylistRowTracker.GUTTER_DP);
 
         boxPaint.setStyle(Paint.Style.STROKE);
@@ -247,6 +263,19 @@ final class PlaylistSelectionOverlay extends View {
             computeOffset(offset);
             final float x = event.getX() - offset[0];
             final float y = event.getY() - offset[1];
+            final int action = event.getActionMasked();
+
+            // A gesture already handed over stays handed over, even if it wanders out of the
+            // gutter or past the bottom of the list. Android delivers the whole of a gesture to
+            // whoever took the DOWN, so bailing out here would leave the list mid-scroll with an
+            // UP it never receives.
+            if (forwardingToList) {
+                forwardToList(event, x, y);
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    forwardingToList = false;
+                }
+                return true;
+            }
 
             // Outside the usable area: let it through, so the navigation bar underneath keeps
             // working. Without this a checkbox drawn near the bottom swallowed Home button taps.
@@ -264,13 +293,26 @@ final class PlaylistSelectionOverlay extends View {
 
             final PlaylistItem hit = itemAtPoint(x, y);
 
-            switch (event.getActionMasked()) {
+            switch (action) {
                 case MotionEvent.ACTION_DOWN:
                     pressedItem = hit;
+                    downX = x;
+                    downY = y;
                     // Consumed either way: a gutter tap must never fall through to the row.
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
+                    // A finger that travels is scrolling, not ticking. The gutter used to hold
+                    // on to the whole gesture, so the list only scrolled if you happened to
+                    // start on the thumbnail or the title.
+                    if (Math.abs(x - downX) > dragSlop || Math.abs(y - downY) > dragSlop) {
+                        pressedItem = null;
+                        forwardingToList = true;
+                        // The list never saw the DOWN, and a scroll that starts from nowhere is
+                        // ignored, so it gets one at the point the finger actually started from.
+                        sendSyntheticDown(event);
+                        forwardToList(event, x, y);
+                    }
                     return true;
 
                 case MotionEvent.ACTION_UP:
@@ -293,7 +335,33 @@ final class PlaylistSelectionOverlay extends View {
         } catch (Exception ex) {
             Logger.printException(() -> "Playlist overlay touch failure", ex);
             pressedItem = null;
+            forwardingToList = false;
             return false;
+        }
+    }
+
+    /**
+     * Passes an event on to the list, moved into the list's own coordinates. The list is not this
+     * view's parent, so the framework does no translation for us.
+     */
+    private void forwardToList(MotionEvent event, float x, float y) {
+        MotionEvent copy = MotionEvent.obtain(event);
+        try {
+            copy.setLocation(x, y);
+            recyclerView.dispatchTouchEvent(copy);
+        } finally {
+            copy.recycle();
+        }
+    }
+
+    /** Opens the forwarded gesture with the DOWN the list missed while this view held it. */
+    private void sendSyntheticDown(MotionEvent source) {
+        MotionEvent down = MotionEvent.obtain(source.getDownTime(), source.getEventTime(),
+                MotionEvent.ACTION_DOWN, downX, downY, source.getMetaState());
+        try {
+            recyclerView.dispatchTouchEvent(down);
+        } finally {
+            down.recycle();
         }
     }
 
